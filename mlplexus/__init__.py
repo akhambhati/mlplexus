@@ -1,2 +1,2 @@
-import mlplexus.Graph
-from mlplexus.Graph import *
+import mlplexus.graph
+from mlplexus.graph import *
