@@ -16,7 +16,7 @@ from mlplexus.exception import (mlPlexusException, mlPlexusNotImplemented,
 
 class Graph(object):
     """
-    Base class for the Graph; representions and manipulations are pure numpy.
+    Base class to establish for the Graph; representions and manipulations are pure numpy.
 
     Graph representation of the system is a function of:
         1) Interconnected topology between the nodes
@@ -79,6 +79,7 @@ class Nodes(object):
         # First, handle the node_id
         if checkNone(node_id) or (not checkType(node_id, np.ndarray)):
             raise mlPlexusTypeError('Must supply a node_id of type np.ndarray')
+        node_id = node_id.squeeze()
         if not checkArrDims(node_id, 1):
             raise mlPlexusException(
                 'Must supply a node_id with a 1d-array of identifiers')
@@ -108,6 +109,7 @@ class Nodes(object):
                                         ' attribute {}. Try a 1d-array.'
                                         .format(key))
             if checkType(value, np.ndarray):
+                value = value.squeeze()
                 if not checkArrDims(value, 1):
                     raise mlPlexusTypeError('Must supply a 1d-array'
                                             ' of values for attribute {}.'
