@@ -49,11 +49,11 @@ class Nodes(object):
             node_attr: key/value -->
                          value=None             OR
                          value=obj              OR
-                         value=np.ndarray(obj,)
+                         value=list(obj,)
                 Each attribute is defined as a key-value pair.
                     Use `key=None` when defining key as a placeholder.
                     Use `key=obj` when defining same key-value across nodes.
-                    Use `key=np.ndarray(obj,)` when defining different
+                    Use `key=list(obj,)` when defining different
                         key-value across nodes.
         """
 
@@ -68,65 +68,49 @@ class Nodes(object):
             raise mlPlexusTypeError(
                 'Must supply a node_id containing strings as identifiers')
         self._id = node_id
-        n_node = len(self._id)
+        self.n_node = len(self._id)
 
         # Second, handle the incoming attributes
         if not checkType(node_attr, dict):
             raise mlPlexusTypeError('All attributes must be supplied in'
                                     ' conventional Python `dict` format')
-        self._attr_key = np.array([*node_attr])
-        n_attr = len(self._attr_key)
 
-        # Parse the attributes into a LUT
-        self._attr_arr = np.nan * np.zeros((n_attr, n_node))
-        if not bool(node_attr):
-            return
+        # Check how number of values compares to number of nodes
+        for key in [*node_attr]:
+            if checkType(node_attr[key], np.ndarray):
+                node_attr[key] = list(node_attr[key])
+            if checkType(node_attr[key], list):
+                if len(node_attr[key]) != self.n_node:
+                    raise mlPlexusTypeError('Must supply same number of values'
+                                            ' as nodes for attribute'
+                                            ' \'{}\'.'.format(key))
+            else:
+                node_attr[key] = [node_attr[key] for i in range(self.n_node)]
 
-        for key, value in node_attr.items():
-            if checkNone(value):
-                continue
-            if checkType(value, list):
-                raise mlPlexusTypeError('Cannot supply list as value for'
-                                        ' attribute {}. Try a 1d-array.'
-                                        .format(key))
-            if checkType(value, np.ndarray):
-                value = value.squeeze()
-                if not checkArrDims(value, 1):
-                    raise mlPlexusTypeError('Must supply a 1d-array'
-                                            ' of values for attribute {}.'
-                                            .format(key))
-                if len(value) != self.n_node:
-                    raise mlPlexusTypeError('Must either supply one value'
-                                            ' or a 1d-array of values equal'
-                                            ' in length to number of nodes'
-                                            ' for attribute {}.'.format(key))
-
-            # Passed checks for properly formatted value
-            k_ix = np.flatnonzero(self._attr_key == key)[0]
-            self._attr_arr[k_ix, :] = value
+        # Passed checks for properly formatted value
+        self._node_attr = node_attr
 
     def __str__(self):
-        """Prettified string representation of node ids"""
+        """Prettified string representation of node ids."""
         s = '\n::NODES::\n'
         return s + '\n'.join(self._id)
 
     def get_id(self):
-        """Return the node IDs"""
+        """Return the node IDs."""
         return self._id
 
     def get_attr_key(self):
-        """Return keys defining attributes for the nodes"""
-        return self._attr_key
+        """Return keys defining attributes for the nodes."""
+        return [*self._node_attr]
 
     def get_attr_val(self, key=None):
-        """Return node attribute values corresponding to a set of keys"""
+        """Return node attribute values corresponding to a key."""
         if checkNone(key):
-            return self._attr_arr
+            raise mlPlexusException('A node attribute key was not entered.')
         if checkType(key, list) or checkType(key, np.ndarray):
             raise mlPlexusTypeError('Cannot supply keys as array-like lists.')
-        if key in self._attr_key:
-            k_ix = np.flatnonzero(self._attr_key == key)[0]
-            return self._attr_arr[k_ix, :]
+        if key in [*self._node_attr]:
+            return self._node_attr[key]
         else:
             raise mlPlexusTypeError('Key {} is not a valid attribute.'
                                     .format(key))
@@ -162,7 +146,7 @@ class Graph(object):
             A: np.ndarray, shape: (n_node, n_node)
                 Adjacency matrix that defines the interlinks between nodes.
                 Matrix should a size equal in size to the number of nodes.
-            graph_state: key/value --> 
+            graph_state: key/value -->
                          value=None             OR
                          value=obj
                 Each state attribute is defined as a key-value pair.
@@ -175,7 +159,6 @@ class Graph(object):
             raise mlPlexusTypeError('Must supply an instance of'
                                     ' mlplexus.graph.Nodes')
         self.nodes = nodes
-        n_node = len(self.nodes.get_id())
 
         # Second, handle A
         if not checkType(A, np.ndarray):
@@ -187,7 +170,7 @@ class Graph(object):
         if not checkArrSqr(A):
             raise mlPlexusException('Must supply an Adjacency matrix'
                                     ' with square, 2d-array.')
-        if not len(A) == n_node:
+        if not len(A) == self.nodes.n_node:
             raise mlPlexusException('Must supply an Adjacency matrix'
                                     ' with size equal to nodes.')
         if np.isnan(A).any():
@@ -199,11 +182,41 @@ class Graph(object):
             'binarized': np.array_equal(A, A.astype(bool)),
             'loops': np.diag(A > 0).any()
         }
-        self._A = A
-        #TODO: Implement self._Ahat as edge vector
+        self._A_to_Ahat(A)
 
         # Third, handle the incoming state-definition
         if not checkType(graph_state, dict):
             raise mlPlexusTypeError('All state-defs must be supplied in'
                                     ' conventional Python `dict` format')
-        self.graph_state = graph_state
+        self._graph_state = graph_state
+
+    def _A_to_Ahat(self, A):
+        """Use graph properties to convert adj. matr. to cfg. vec"""
+        if hasattr(self, '_Ahat'):
+            return 0
+
+        ix, iy = np.triu_indices_from(A, k=1)
+        if self.graph_props['directed']:
+            tril = np.tril_indices_from(A, k=-1)
+            ix = np.concatenate((ix, tril[0]))
+            iy = np.concatenate((iy, tril[1]))
+        if self.graph_props['loops']:
+            diag = np.diag_indices_from(A)
+            ix = np.concatenate((ix, diag[0]))
+            iy = np.concatenate((iy, diag[1]))
+        self._trans_ix = ix
+        self._trans_iy = iy
+
+        self.Ahat = A[self._trans_ix, self._trans_iy]
+
+    def get_adjacency_matrix(self):
+        """Return the matrix representation of the Graph."""
+        A = np.zeros((self.nodes.n_node, self.nodes.n_node))
+        A[self._trans_ix, self._trans_iy] = self.Ahat
+        if not self.graph_props['directed']:
+            A += np.triu(A, k=1).T
+        return A
+
+    def get_configuration_vector(self):
+        """Return the vector representation of the Graph."""
+        return self.Ahat
