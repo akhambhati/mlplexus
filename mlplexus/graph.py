@@ -1,5 +1,6 @@
 """
-Implements the basic infrastructure of Graph, MonoGraph, and MultiGraph.
+Implements the basic infrastructure of
+Nodes, BaseGraph, MonoGraph, and MultiGraph.
 
 Author: Ankit N. Khambhati
 Created: 2018/02/28
@@ -8,30 +9,10 @@ Updated: 2018/02/28
 
 import numpy as np
 
-from mlplexus.checks import (checkArrDims, checkArrDTypeStr, checkNone,
-                             checkType)
+from mlplexus.checks import (checkArrDims, checkArrDTypeStr, checkArrSqr,
+                             checkNone, checkType)
 from mlplexus.exception import (mlPlexusException, mlPlexusNotImplemented,
-                                mlPlexusTypeError)
-
-
-class Graph(object):
-    """
-    Base class to establish for the Graph; representions and manipulations are pure numpy.
-
-    Graph representation of the system is a function of:
-        1) Interconnected topology between the nodes
-        2) State-based attributes of the individual nodes
-
-    Constraints within the Graph object:
-        1) All nodes have identical types of attributes (values can differ).
-        2) All edges represent the same mode of interaction.
-        3) Two nodes can only have one edge between them.
-        3) Edges are always weighted.
-        4) Nodes can not have self-loops.
-    """
-
-    def __init__(self):
-        raise mlPlexusNotImplemented
+                                mlPlexusTypeError, mlPlexusValueError)
 
 
 class Nodes(object):
@@ -149,3 +130,80 @@ class Nodes(object):
         else:
             raise mlPlexusTypeError('Key {} is not a valid attribute.'
                                     .format(key))
+
+
+class Graph(object):
+    """
+    Base class to establish the Graph object; implementation
+    is pure python, numpy.
+
+    Graph provides a flexible format define the
+    topology of edges between the nodes.
+
+    Graph defines the topology of edges between the nodes as a function
+    for an arbitrary, user-defined complex system state.
+
+    Constraints within the Graph object:
+        1) Nodes are predefined in an instance of Nodes class.
+        2) Two nodes can only have one edge between them.
+        3) Mode of edge interaction is completely described
+           by the state-definition. Edge type is not explicitly defined.
+    """
+
+    def __init__(self, nodes=None, A=None, **graph_state):
+        """
+        Initialize Graph with an instance of Nodes, a specification of
+        edges interlinking the nodes in Nodes, and a state definition.
+
+        Parameters
+        ----------
+            nodes: mlplexus.graph.Nodes
+                An instance of defined nodes with node attributes.
+            A: np.ndarray, shape: (n_node, n_node)
+                Adjacency matrix that defines the interlinks between nodes.
+                Matrix should a size equal in size to the number of nodes.
+            graph_state: key/value --> 
+                         value=None             OR
+                         value=obj
+                Each state attribute is defined as a key-value pair.
+                    Use `key=None` when defining key as a placeholder.
+                    Use `key=obj` when defining key with any hashable object.
+        """
+
+        # First, handle nodes
+        if checkNone(nodes) or (not checkType(nodes, Nodes)):
+            raise mlPlexusTypeError('Must supply an instance of'
+                                    ' mlplexus.graph.Nodes')
+        self.nodes = nodes
+        n_node = len(self.nodes.get_id())
+
+        # Second, handle A
+        if not checkType(A, np.ndarray):
+            raise mlPlexusTypeError('Must supply an Adjacency matrix'
+                                    ' as a square, numpy.ndarray.')
+        if not checkArrDims(A, 2):
+            raise mlPlexusException('Must supply an Adjacency matrix'
+                                    ' with square, 2d-array.')
+        if not checkArrSqr(A):
+            raise mlPlexusException('Must supply an Adjacency matrix'
+                                    ' with square, 2d-array.')
+        if not len(A) == n_node:
+            raise mlPlexusException('Must supply an Adjacency matrix'
+                                    ' with size equal to nodes.')
+        if np.isnan(A).any():
+            raise mlPlexusValueError('Please resolve NaN in Adjacency matrix.')
+
+        # Infer graph properties from structure of adjacency matrix
+        self.graph_props = {
+            'directed': not np.array_equal(A, A.T),
+            'binarized': np.array_equal(A, A.astype(bool)),
+            'loops': np.diag(A > 0).any()
+        }
+        self._A = A
+        #TODO: Implement self._Ahat as edge vector
+
+        # Third, handle the incoming state-definition
+        if not checkType(graph_state, dict):
+            raise mlPlexusTypeError('All state-defs must be supplied in'
+                                    ' conventional Python `dict` format')
+        self.graph_state = graph_state
