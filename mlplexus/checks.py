@@ -9,6 +9,14 @@ Updated: 2018/02/28
 import numpy as np
 
 
+def checkArrSqr(arr):
+    """Check if arr has square shape"""
+    if arr.shape[0] == arr.shape[1]:
+        return True
+    else:
+        return False
+
+
 def checkArrDims(arr, n_dim):
     """Check if arr has n_dim dimensions"""
     if arr.ndim == n_dim:
