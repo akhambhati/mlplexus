@@ -19,3 +19,7 @@ class mlPlexusNotImplemented(mlPlexusException):
 
 class mlPlexusTypeError(mlPlexusException):
     """Exception for object of wrong type."""
+
+
+class mlPlexusValueError(mlPlexusException):
+    """Exception for incorrect values."""
