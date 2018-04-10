@@ -4,7 +4,7 @@ Graph, GraphState.
 
 Author: Ankit N. Khambhati
 Created: 2018/02/28
-Updated: 2018/04/09
+Updated: 2018/04/10
 """
 
 import numpy as np
@@ -28,12 +28,22 @@ class GraphArch(object):
     derived from the GraphState class, _not_ in the Graph class.
     """
 
-    def __init__(self, node_id=None, **node_attr):
+    def __init__(self,
+                 graph_name=None,
+                 graph_dir=None,
+                 node_id=None,
+                 **node_attr):
         """
         Initialize graph with nodes of specific ID and attributes.
 
         Parameters
         ----------
+            graph_name: str
+                Name given to the Graph Architecture (used for cacheing)
+
+            graph_dir: str
+                Directory in which the Graph Architecture will be stored.
+
             node_id: np.ndarray(str,)
                 List of strings, where each string identifies a node.
 
@@ -42,25 +52,37 @@ class GraphArch(object):
                 Each attribute is defined as a key-value pair.
         """
 
-        # First, handle the node_id
-        if checkNone(node_id) or (not checkType(node_id, np.ndarray)):
+        # Initial input quality checks
+        # Handle the Graph name and directory
+        if (not checkType(graph_name, str)) or (not checkType(graph_dir, str)):
+            raise mlPlexusTypeError('Must supply a string for graph name'
+                                    ' and graph directory.')
+        cstr = class_as_string(self)
+        graph_path = '{}/{}.{}.npy'.format(graph_dir, cstr, graph_name)
+
+        # If a loadable path exists, load it and ignore all other inputs
+        if self._memmap_load(graph_path):
+            print('Defining existing Graph Architecture:'
+                  ' \'{}\' from \'{}\''.format(graph_name, graph_dir))
+            print('   ...other GraphArch inputs ignored...')
+            return None
+
+        # If not, then check all the GraphArch constructors
+        # Handle Node IDs
+        if not checkType(node_id, np.ndarray):
             raise mlPlexusTypeError('Must supply a node_id of type np.ndarray')
-        node_id = node_id.squeeze()
-        if not checkArrDims(node_id, 1):
-            raise mlPlexusException(
-                'Must supply a node_id with a 1d-array of identifiers')
         if not checkArrDTypeStr(node_id):
-            raise mlPlexusTypeError(
-                'Must supply a node_id containing strings as identifiers')
+            print('Warning: Supplied Node IDs not strings, converting...')
+        node_id = np.array(node_id, dtype=str)
+        if not checkArrDims(node_id, 1):
+            print('Warning: Supplied Node IDs not flattened, converting...')
+        node_id = node_id.flatten()
         n_node = len(node_id)
 
         # Second, handle the incoming attributes
         if not checkType(node_attr, dict):
             raise mlPlexusTypeError('All attributes must be supplied in'
                                     ' conventional Python `dict` format')
-
-        # Construct a list of numpy dtypes for the structure
-        dtype_tuple = []
         for key in [*node_attr]:
             key_attr = node_attr[key].squeeze()
             if not checkType(key_attr, np.ndarray):
@@ -71,17 +93,49 @@ class GraphArch(object):
                                         ' same number of values as nodes'
                                         ' in first dimension, for attribute'
                                         ' \'{}\'.'.format(key))
+        if 'node_id' in [*node_attr]:
+            raise mlPlexusValueError('Cannot supply an attribute named:'
+                                     ' \'node_id\'.')
+        node_attr['node_id'] = node_id
+
+        # All checks passed, now define the graph by opening interface with
+        if self._memmap_save(graph_path, node_attr):
+            print('Created and Defined Graph Architecture'
+                  ' \'{}\' in \'{}\''.format(graph_name, graph_dir))
+
+    def _memmap_load(self, graph_path):
+        """Memory map the saved graph"""
+
+        if checkPath(graph_path):
+            arr_node_attr = np.load(graph_path, mmap_mode='r')
+            self._define_graph(arr_node_attr)
+            return True
+        else:
+            return False
+
+    def _memmap_save(self, graph_path, node_attr):
+        """Save the graph"""
+
+        # Edge case, should not enter, if so logic in __init__ is wrong
+        if checkPath(graph_path):
+            raise mlPlexusIOError(
+                'Cannot overwrite existing path \'{}\'.'.format(graph_path))
+
+        dtype_tuple = []
+        for key in [*node_attr]:
+            key_attr = node_attr[key].squeeze()
             dtype_tuple.append((key, key_attr.dtype, key_attr.shape[1:]))
-        dtype_tuple.append(('node_id', node_id.dtype, node_id.shape[1:]))
+        n_node = len(node_attr[[*node_attr][0]])
 
         # Generate a Structured Array from the attributes
         arr_node_attr = np.empty(n_node, dtype=dtype_tuple)
-        arr_node_attr['node_id'] = node_id
         for key in [*node_attr]:
             arr_node_attr[key] = node_attr[key]
 
-        # Set attributes for the class attributes
-        self._define_graph(arr_node_attr)
+        # Create the file
+        np.save(graph_path, arr_node_attr)
+        self._memmap_load(graph_path)
+        return True
 
     def _define_graph(self, node_attr):
         """Define class instance attributes from node attribute array"""
@@ -99,71 +153,3 @@ class GraphArch(object):
         """Prettified string representation of node ids."""
         s = '\n::NODES::\n'
         return s + '\n'.join(self.node_id)
-
-    def save(self, graph_name, graph_dir):
-        """
-        Save the constructed Graph Architecture.
-
-        The Graph Architecture can be fully reconstructed from the attribute,
-        node_attr.
-
-        Parameters
-        ----------
-            graph_name: str
-                Unique name given to the defined Graph Architecture.
-            graph_dir: str
-                The directory in which the Graph Architecture will be saved.
-
-        Returns
-        -------
-            graph_path: str
-                Saved file will have the path,
-                <graph_dir>/mlplexus.graph.GraphArch.<graph_name>.npy
-        """
-
-        # First, check the inputs
-        if (not checkType(graph_name, str)) or (not checkType(graph_dir, str)):
-            raise mlPlexusTypeError('Must supply name and directory as str.')
-
-        # Get the class string
-        cstr = class_as_string(self)
-
-        # Construct the full path
-        graph_path = '{}/{}.{}.npy'.format(graph_dir, cstr, graph_name)
-
-        if checkPath(graph_path):
-            raise mlPlexusIOError(
-                'The path \'{}\' already exists!'.format(graph_path))
-        np.save(graph_path, self.node_attr)
-
-        return graph_path
-
-    def load(self, graph_path):
-        """
-        Load the Graph Architecture.
-
-        The Graph Architecture can be fully reconstructed from the attribute,
-        node_attr.
-
-        Parameters
-        ----------
-            graph_path: str
-                <graph_dir>/mlplexus.graph.GraphArch.<graph_name>.npy
-        """
-
-        # First, check the inputs
-        if (not checkType(graph_path, str)):
-            raise mlPlexusTypeError('Must supply path as str.')
-        if not checkPath(graph_path):
-            raise mlPlexusIOError(
-                'The path \'{}\' does not exists.'.format(graph_path))
-
-        # Get the class string
-        cstr = class_as_string(self)
-
-        if cstr not in graph_path:
-            raise mlPlexusIOError('The file \'{}\' is invalid for'
-                                  ' class \'{}\'.'.format(graph_path, cstr))
-
-        # Re-define the class instance
-        self._define_graph(np.load(graph_path, mmap_mode='r'))
