@@ -23,3 +23,7 @@ class mlPlexusTypeError(mlPlexusException):
 
 class mlPlexusValueError(mlPlexusException):
     """Exception for incorrect values."""
+
+
+class mlPlexusIOError(mlPlexusException):
+    """Exception for input/output errors."""
